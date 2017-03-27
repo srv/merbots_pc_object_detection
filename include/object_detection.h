@@ -19,8 +19,6 @@
 #include <pcl/common/transforms.h>
 #include <pcl/common/common.h>
 #include <pcl/registration/icp_nl.h>
-//#include <pcl/registration/icp.h>
-#include <pcl/features/moment_of_inertia_estimation.h>
 #include <pcl/filters/passthrough.h>
 
 using namespace std;
@@ -29,15 +27,7 @@ typedef pcl::PointXYZRGB PointType;
 
 pcl::PointCloud<PointType>::Ptr target0_ (new pcl::PointCloud<PointType> ());
 pcl::PointCloud<PointType>::Ptr target1_ (new pcl::PointCloud<PointType> ());
-pcl::PointCloud<PointType>::Ptr target2_ (new pcl::PointCloud<PointType> ());
-pcl::PointCloud<PointType>::Ptr target3_ (new pcl::PointCloud<PointType> ());
-pcl::PointCloud<PointType>::Ptr previous_target (new pcl::PointCloud<PointType> ());
-pcl::PointCloud<PointType>::Ptr best_target_reg_0 (new pcl::PointCloud<PointType> ());
-
-
-// TODO Modify by local PC
-pcl::PointCloud<PointType>::Ptr original_scene (new pcl::PointCloud<PointType> ());
-pcl::PointCloud<PointType>::Ptr reg_result (new pcl::PointCloud<PointType> ()); 
+pcl::PointCloud<PointType>::Ptr best_target_reg_0_ (new pcl::PointCloud<PointType> ());
 
 namespace point_cloud {  
   class ObjectDetection {
@@ -55,41 +45,37 @@ namespace point_cloud {
       // TOPIC OUTPUT
       ros::Publisher  points2_pub_;
       ros::Publisher  target_pose_pub_;
+      ros::Publisher  target_pose_w_pub_;
       // LAUNCH PARAMETERES
-      bool   debug_detected_object;
-      bool   debug_height;
-      bool   debug_max_min_height;
-      bool   debug_best_target;
-      bool   debug_set_inclination;
-      bool   debug_registration;
-      bool   user_def_plane;
+      bool   use_only_first_target_;
+
+      bool   debug_height_;
+      bool   debug_max_min_height_;
+      bool   debug_best_target_;
+      bool   debug_set_inclination_;
+      bool   debug_registration_;
+   
       bool   filter_range_;
-      int    min_scene_point_size;
-      float    rot_x, rot_y, rot_z;
-      float min_range_ , max_range_;
-      float  layer_height;
-      float  incr_layer_height;   
-      float  reg_sc_th; 
-      float  height_reg_sc_th;
+      int    min_scene_point_size_;
+      float  min_range_ , max_range_;
+      float  layer_height_;
+      float  incr_layer_height_;   
+      float  reg_sc_th_; 
+      float  max_correspnd_dist_;
       float  threshold_score_; 
       float  minimum_score_dif_; 
-      std::string frame_id;
+      std::string frame_id_;
       // PARAMETERES
-      bool   initialized;
-      bool   b_world_pub;
-      bool   ready2_publish;   
-      bool   orientation_req_PC;
-      int    it_bef_height_filter;     
-      geometry_msgs::Pose world_tf;
-      Eigen::Affine3f   rot_matrix; 
-      Eigen::Affine3f   anti_rot_matrix;      
-      Eigen::Matrix4f   initial_guess;
-      Eigen::Matrix4f   new_initial_guess; 
-      Eigen::Vector4f   m_centroid; 
-      Eigen::Vector4f   tar1_centroid; 
-      Eigen::Vector4f   tar2_centroid; 
-      Eigen::Vector4f   tar3_centroid; 
-    
+      bool   initialized_;
+      bool   b_world_pub_;
+      bool   ready2_publish_;   
+      bool   orientation_req_PC_;
+      int    it_bef_height_filter_;     
+      geometry_msgs::Pose sensor2_world_;
+      Eigen::Affine3f     rot_matrix_; 
+      Eigen::Affine3f     anti_rot_matrix_;      
+      Eigen::Matrix4f     initial_guess_;
+     
       void inputWorldCoordClb(geometry_msgs::Pose input_world_coord);
 
       void inputCloudClb (const sensor_msgs::PointCloud2::ConstPtr& in_cloud);
@@ -110,9 +96,8 @@ namespace point_cloud {
                           float minimum_score_dif, float max_correspondence_dist,
                           pcl::PointCloud<PointType>::Ptr& reg_result, float & reg_score, Eigen::Affine3f & output_trans);
 
-      void detectedTargetPositionAdapt(pcl::PointCloud<PointType>::ConstPtr reg_result, 
-                           Eigen::Vector3f & target_pos, Eigen::Quaternionf & target_quat);
+      void publishData(pcl::PointCloud<PointType>::ConstPtr reg_result, 
+                       const sensor_msgs::PointCloud2::ConstPtr& in_cloud);
   };
 }
-
 #endif /* local_location_H_ */
