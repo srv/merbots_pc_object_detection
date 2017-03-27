@@ -1,51 +1,43 @@
 <launch>
-<!-- Arguments -->
-
-<arg name="path" default="/home/joanpep/ros/bag_flies/merbots/" />
-
-<arg name="disparity_params" value="$(find pcl)/config/disparity_params_stereo.yaml" />
-<arg name="file_1" default="2017_03_08_pool/58.bag" />
-<arg name="camera" default="/stereo_forward"/>
-
-
-<arg name="scene_dir" default="/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/scene5_filt.pcd" />
-
+  <!-- Arguments -->
+  <arg name="bagfile" default="/home/plnegre/bagfiles/stereo.bag" />
+  <arg name="camera" default="/stereo_forward"/>
   <param name="use_sim_time" value="true" />
-	<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg path)$(arg file_1)"/>
+
+	<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg bagfile) --l"/>
 
   <!-- STEREO IMAGE PROC 2 RECTIFY -->
   <node ns="$(arg camera)" pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" >
-		<rosparam file="$(arg disparity_params)"/>
-
+		<rosparam file="$(find merbots_pc_object_detection)/config/disparity_params_stereo.yaml"/>
 	</node>
+
   <!-- PC FILTER -->
-    <node pkg="pcl" type="points2_filter" name="points2_filter" output="screen">
+  <node pkg="merbots_pc_object_detection" type="points2_filter" name="points2_filter" output="screen">
     <remap from="/in" to="/$(arg camera)/points2"/>
-    <!--remap from="/in" to="/$(arg camera)/scan"/-->
     <param name="filter_nan" value= "true"/>
     <param name="filter_voxelgrid" value= "true"/>
-    <param name="voxel_size" value= "0.01"/> 
+    <param name="voxel_size" value= "0.01"/>
   </node>
-  
-<!--Object Detection-->
-  <node pkg="pcl" type="objectDetection_node" name="object_detection" output="screen">
-    
+
+  <!--Object Detection-->
+  <node pkg="merbots_pc_object_detection" type="objectDetection_node" name="object_detection" output="screen">
+
     <remap from="/input_cloud" to="/points2_filter/out"/>
-    
+
     <param name="frame_id" value= "camera"/>
-    <param name="target_0" value= "/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/vertices14_z0_filt0.pcd"/>
-    <param name="target_1" value= "/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/vertices14_z180_filt0.pcd"/>
-       
+    <param name="target_0" value= "$(find merbots_pc_object_detection)/targets/vertices14_z0_filt0.pcd"/>
+    <param name="target_1" value= "$(find merbots_pc_object_detection)/targets/vertices14_z180_filt0.pcd"/>
+
     <param name="debug_set_inclination" value="false" />
     <param name="debug_height" value="false" />
     <param name="debug_detected_object" value="false" />
     <param name="debug_max_min_height" value="false" />
     <param name="debug_best_target" value="false" />
     <param name="debug_registration" value="false" />
-    
-    <param name="filter_range" value= "true"/> 
-    <param name="min_range" value= "0.2"/> 
-    <param name="max_range" value= "6.0"/> 
+
+    <param name="filter_range" value= "true"/>
+    <param name="min_range" value= "0.2"/>
+    <param name="max_range" value= "6.0"/>
 
     <param name="user_def_plane" value="true" />
     <param name="user_def_plane_rot_x" value="0.0" />
@@ -62,8 +54,8 @@
     <!-- TODO change name height_reg_sc_th maXIMUM CORRESPONDENCE DISTANCE /-->
     <param name="height_reg_sc_th" value="0.0000075" />
 
-    
-  </node>    
+
+  </node>
 
 </launch>
-	
+
