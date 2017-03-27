@@ -2,9 +2,11 @@
 <!-- Arguments -->
 
 <arg name="path" default="/home/joanpep/ros/bag_flies/merbots/" />
+
 <arg name="disparity_params" value="$(find pcl)/config/disparity_params_stereo.yaml" />
-<arg name="file_1" default="laser/quality.bag" />
-<arg name="camera" default="/sense3d"/>
+<arg name="file_1" default="2017_03_08_pool/58.bag" />
+<arg name="camera" default="/stereo_forward"/>
+
 
 <arg name="scene_dir" default="/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/scene5_filt.pcd" />
 
@@ -12,14 +14,14 @@
 	<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg path)$(arg file_1)"/>
 
   <!-- STEREO IMAGE PROC 2 RECTIFY -->
-  <!--node ns="$(arg camera)" pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" >
+  <node ns="$(arg camera)" pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" >
 		<rosparam file="$(arg disparity_params)"/>
 
-	</node-->
+	</node>
   <!-- PC FILTER -->
     <node pkg="pcl" type="points2_filter" name="points2_filter" output="screen">
-    <!--remap from="/in" to="/$(arg camera)/points2"/-->
-    <remap from="/in" to="/$(arg camera)/scan"/>
+    <remap from="/in" to="/$(arg camera)/points2"/>
+    <!--remap from="/in" to="/$(arg camera)/scan"/-->
     <param name="filter_nan" value= "true"/>
     <param name="filter_voxelgrid" value= "true"/>
     <param name="voxel_size" value= "0.01"/> 
@@ -29,7 +31,8 @@
   <node pkg="pcl" type="objectDetection_node" name="object_detection" output="screen">
     
     <remap from="/input_cloud" to="/points2_filter/out"/>
-    <param name="frame_id" value= "$(arg camera)"/>
+    
+    <param name="frame_id" value= "camera"/>
     <param name="target_0" value= "/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/vertices14_z0_filt0.pcd"/>
     <param name="target_1" value= "/home/joanpep/ros/pc_ws/src/dataset/caduf_struct/vertices14_z180_filt0.pcd"/>
        
@@ -46,7 +49,7 @@
 
     <param name="user_def_plane" value="true" />
     <param name="user_def_plane_rot_x" value="0.0" />
-    <param name="user_def_plane_rot_y" value="55.0" />
+    <param name="user_def_plane_rot_y" value="0.01" />
     <param name="user_def_plane_rot_z" value="0.0" />
 
     <param name="layer_height" value="0.1" />
@@ -56,7 +59,7 @@
     <param name="minimum_score_dif_" value="0.000007" />
     <param name="min_scene_point_size" value="800" />
     <param name="reg_sc_th" value="0.000009" />
-    <!-- TODO height_reg_sc_th maXIMUM CORRESPONDENCE DISTANCE /-->
+    <!-- TODO change name height_reg_sc_th maXIMUM CORRESPONDENCE DISTANCE /-->
     <param name="height_reg_sc_th" value="0.0000075" />
 
     
