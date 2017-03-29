@@ -18,13 +18,13 @@ namespace point_cloud{
 
     std::string target0_filename;
     std::string target1_filename;
-    std::string target2_filename;
-    std::string target3_filename;
+
     nodeHandle.param<std::string>("frame_id", frame_id_, "camera");
     nodeHandle.param<std::string>("target_0", target0_filename, "vertices14_0.pcd");
     nodeHandle.param<std::string>("target_1", target1_filename, "vertices14_90.pcd");
     nodeHandle.param("use_only_first_target", use_only_first_target_, false);
-    
+
+
     // DEBUG
     nodeHandle.param("debug_height", debug_height_, false);
     nodeHandle.param("debug_set_inclination", debug_set_inclination_, false);
@@ -90,8 +90,7 @@ namespace point_cloud{
     points2_sub_ = nodeHandle.subscribe("/input_cloud", 1, &ObjectDetection::inputCloudClb, this);
 
     // Output
-    target_pose_pub_ = nodeHandle.advertise<geometry_msgs::PoseStamped> ("object_pose", 1);
-    target_pose_w_pub_= nodeHandle.advertise<geometry_msgs::PoseStamped> ("object_pose_world", 1);
+    target_pose_pub_= nodeHandle.advertise<geometry_msgs::Pose> ("object_pose_world", 1);
     points2_pub_ = nodeHandle.advertise<sensor_msgs::PointCloud2>("out", 1);
   }
 
@@ -306,6 +305,59 @@ namespace point_cloud{
 
   }
 
+  void ObjectDetection::publishPose(const std::string& camera_frame_id,
+                                    const tf::Transform cam_to_target) {
+    // Publish geometry message from world frame id
+    if (target_pose_pub_.getNumSubscribers() > 0) {
+      try {
+        ros::Time now = ros::Time::now();
+        tf::StampedTransform world2camera;
+        tf_listener_.waitForTransform("world",
+                                      camera_frame_id,
+                                      now, ros::Duration(1.0));
+        tf_listener_.lookupTransform("world",
+            camera_frame_id, now, world2camera);
+
+        // Fix camera rotation
+        tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
+
+        // Compose the message
+        geometry_msgs::Pose pose_msg;
+        tf::Transform world2target = world2camera * cam_to_target * cam_rot;
+        pose_msg.position.x = world2target.getOrigin().x();
+        pose_msg.position.y = world2target.getOrigin().y();
+        pose_msg.position.z = world2target.getOrigin().z();
+        pose_msg.orientation.x = world2target.getRotation().x();
+        pose_msg.orientation.y = world2target.getRotation().y();
+        pose_msg.orientation.z = world2target.getRotation().z();
+        pose_msg.orientation.w = world2target.getRotation().w();
+
+
+        target_pose_pub_.publish(pose_msg);
+      } catch (tf::TransformException ex) {
+        ROS_WARN_STREAM("Cannot find the tf between " <<
+          "world frame id and camera. " << ex.what());
+      }
+    }
+  }
+
+  tf::Transform ObjectDetection::matrix4fToTf(const Eigen::Matrix4f& in) {
+    tf::Vector3 t_out;
+    t_out.setValue(static_cast<double>(in(0,3)),
+                   static_cast<double>(in(1,3)),
+                   static_cast<double>(in(2,3)));
+
+    tf::Matrix3x3 tf3d;
+    tf3d.setValue(static_cast<double>(in(0,0)), static_cast<double>(in(0,1)), static_cast<double>(in(0,2)),
+                  static_cast<double>(in(1,0)), static_cast<double>(in(1,1)), static_cast<double>(in(1,2)),
+                  static_cast<double>(in(2,0)), static_cast<double>(in(2,1)), static_cast<double>(in(2,2)));
+
+    tf::Quaternion q_out;
+    tf3d.getRotation(q_out);
+    tf::Transform out(q_out, t_out);
+    return out;
+  }
+
   void ObjectDetection::publishData(pcl::PointCloud<PointType>::ConstPtr object_detected, 
                                                     const sensor_msgs::PointCloud2::ConstPtr& in_cloud){
 
@@ -327,56 +379,17 @@ namespace point_cloud{
     Eigen::Quaternionf target_quat (initial_guess_rot);
 
     // PUBLISH POSE TF
+    tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
     static tf::TransformBroadcaster br_target;
-    tf::Transform tf_object2_sensor;
-    tf_object2_sensor.setOrigin( tf::Vector3(initial_guess_(0,3), initial_guess_(1,3), initial_guess_(2,3)) );
-    tf_object2_sensor.setRotation( tf::Quaternion (target_quat.x(), target_quat.y(), target_quat.z(), target_quat.w()));
-    br_target.sendTransform(tf::StampedTransform(tf_object2_sensor, ros::Time::now(), frame_id_, "target_detected"));
+    tf::Transform tf_sensor2object;
+    tf_sensor2object.setOrigin( tf::Vector3(initial_guess_(0,3), initial_guess_(1,3), initial_guess_(2,3)) );
+    tf_sensor2object.setRotation( tf::Quaternion (target_quat.x(), target_quat.y(), target_quat.z(), target_quat.w()));
+    tf_sensor2object = tf_sensor2object * cam_rot;
+    br_target.sendTransform(tf::StampedTransform(tf_sensor2object, ros::Time::now(), in_cloud->header.frame_id, "amphoraJP"));
 
     // PUBLSIH POSE STAMPED
-    geometry_msgs::PoseStamped pose_pub;
+    publishPose(in_cloud->header.frame_id, tf_sensor2object);
 
-    pose_pub.header = in_cloud->header;
-    pose_pub.pose.position.x = initial_guess_(0,3);
-    pose_pub.pose.position.y = initial_guess_(1,3);
-    pose_pub.pose.position.z = initial_guess_(2,3);
-    pose_pub.pose.orientation.x = target_quat.x();
-    pose_pub.pose.orientation.y = target_quat.y();
-    pose_pub.pose.orientation.z = target_quat.z();
-    pose_pub.pose.orientation.w = target_quat.w();
-    target_pose_pub_.publish(pose_pub);
-
-    if (b_world_pub_){
-      ROS_ERROR ("PUBLISH the target referred to the world has not been tested yet");
-
-      tf::Transform tf_sensor2_world;
-
-      tf_sensor2_world.setOrigin( tf::Vector3(sensor2_world_.position.x,
-                                              sensor2_world_.position.y, 
-                                              sensor2_world_.position.z));
-
-      tf_sensor2_world.setRotation( tf::Quaternion (sensor2_world_.orientation.x, 
-                                                    sensor2_world_.orientation.y, 
-                                                    sensor2_world_.orientation.z, 
-                                                    sensor2_world_.orientation.w));
-      br_target.sendTransform(tf::StampedTransform(tf_sensor2_world, ros::Time::now(), "world", frame_id_));
-      
-      tf::Transform tf_object2_world;
-      tf_object2_world = tf_sensor2_world * tf_object2_sensor;
-
-      // Publish final pose referred to world
-      geometry_msgs::PoseStamped pose_object2_world;
-
-      pose_object2_world.header = in_cloud->header;
-      pose_object2_world.pose.position.x = tf_object2_world.getOrigin().x();
-      pose_object2_world.pose.position.y = tf_object2_world.getOrigin().y();
-      pose_object2_world.pose.position.z = tf_object2_world.getOrigin().z();
-      pose_object2_world.pose.orientation.x = tf_object2_world.getRotation().x();
-      pose_object2_world.pose.orientation.y = tf_object2_world.getRotation().y();
-      pose_object2_world.pose.orientation.z = tf_object2_world.getRotation().z();
-      pose_object2_world.pose.orientation.w = tf_object2_world.getRotation().w();
-      target_pose_w_pub_.publish(pose_object2_world);
-    }
   }
 
   void ObjectDetection::inputWorldCoordClb(geometry_msgs::Pose input_world_coord){

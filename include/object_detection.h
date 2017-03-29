@@ -6,9 +6,10 @@
 #include <math.h> 
 
 #include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
 
 #include <ros/ros.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
 
 #include <pcl_ros/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -65,6 +66,7 @@ namespace point_cloud {
       float  threshold_score_; 
       float  minimum_score_dif_; 
       std::string frame_id_;
+      tf::TransformListener tf_listener_;
       // PARAMETERES
       bool   initialized_;
       bool   b_world_pub_;
@@ -91,6 +93,8 @@ namespace point_cloud {
                         pcl::PointCloud<PointType>::Ptr output_cloud,
                         float min_height_point, float max_height_point);
 
+      bool getRobot2Camera(const std::string& camera_frame_id);
+
       void registrationPC(pcl::PointCloud<PointType>::ConstPtr input_target, Eigen::Matrix4f i_guess,
                           pcl::PointCloud<PointType>::ConstPtr scene,
                           float minimum_score_dif, float max_correspondence_dist,
@@ -98,6 +102,10 @@ namespace point_cloud {
 
       void publishData(pcl::PointCloud<PointType>::ConstPtr reg_result, 
                        const sensor_msgs::PointCloud2::ConstPtr& in_cloud);
+
+      void publishPose(const std::string& camera_frame_id,
+                       const tf::Transform cam_to_target);
+      tf::Transform matrix4fToTf(const Eigen::Matrix4f& in);
   };
 }
 #endif /* local_location_H_ */

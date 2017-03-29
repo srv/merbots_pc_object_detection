@@ -1,0 +1,58 @@
+<launch>
+  <!-- Arguments -->
+  <arg name="camera" default="/stereo_camera/scaled_x2"/>
+
+  <!-- PC FILTER -->
+  <node pkg="merbots_pc_object_detection" type="points2_filter" name="points2_filter" output="screen">
+    <remap from="/in" to="/$(arg camera)/points2"/>
+    <param name="filter_nan" value= "true"/>
+    <param name="filter_voxelgrid" value= "true"/>
+    <param name="voxel_size" value= "0.01"/>
+  </node>
+
+  <!--Object Detection-->
+  <node pkg="merbots_pc_object_detection" type="objectDetection_node" name="object_detection" output="screen">
+
+    <remap from="/input_cloud" to="/points2_filter/out"/>
+    <remap from="/object_detection/object_pose_world" to="/object_pose"/>
+
+
+    <param name="robot_frame_id_" value= "girona500"/>
+    <param name="world_frame_id_" value= "world"/>
+
+
+    <param name="frame_id" value= "camera"/>
+    <param name="target_0" value= "$(find merbots_pc_object_detection)/targets/vertices14_z180_filt0.pcd"/>
+    <param name="target_1" value= "$(find merbots_pc_object_detection)/targets/vertices14_z0_filt0.pcd"/>
+
+    <param name="use_only_first_target" value="true" />
+
+    <param name="debug_set_inclination" value="false" />
+    <param name="debug_height" value="false" />
+    <param name="debug_max_min_height" value="false" />
+    <param name="debug_best_target" value="false" />
+    <param name="debug_registration" value="false" />
+
+    <param name="filter_range" value= "true"/>
+    <param name="min_range" value= "0.2"/>
+    <param name="max_range" value= "6.0"/>
+
+    <param name="user_def_plane" value="true" />
+    <param name="user_def_plane_rot_x" value="-23.5" />
+    <param name="user_def_plane_rot_y" value="0.1" />
+    <param name="user_def_plane_rot_z" value="0.0" />
+
+    <param name="layer_height" value="0.1" />
+    <param name="incr_layer_height" value="0.05" />
+
+    <param name="threshold_score_" value="0.000086" />
+    <param name="minimum_score_dif_" value="0.000007" />
+    <param name="min_scene_point_size" value="800" />
+    <param name="reg_sc_th" value="0.000009" />
+    <param name="max_correspnd_dist" value="0.0000075" />
+
+
+  </node>
+
+</launch>
+
