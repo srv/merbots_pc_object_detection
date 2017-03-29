@@ -7,6 +7,7 @@
 
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+#include <tf_conversions/tf_eigen.h>
 
 #include <ros/ros.h>
 #include <geometry_msgs/Pose.h>
@@ -73,6 +74,9 @@ namespace point_cloud {
       bool   ready2_publish_;   
       bool   orientation_req_PC_;
       int    it_bef_height_filter_;     
+      std::string robot_frame_id_;
+      tf::StampedTransform robot2camera_;
+      bool robot2camera_init_;
       geometry_msgs::Pose sensor2_world_;
       Eigen::Affine3f     rot_matrix_; 
       Eigen::Affine3f     anti_rot_matrix_;      
@@ -103,8 +107,7 @@ namespace point_cloud {
       void publishData(pcl::PointCloud<PointType>::ConstPtr reg_result, 
                        const sensor_msgs::PointCloud2::ConstPtr& in_cloud);
 
-      void publishPose(const std::string& camera_frame_id,
-                       const tf::Transform cam_to_target);
+      void publishPose(const tf::Transform robot_to_target);
       tf::Transform matrix4fToTf(const Eigen::Matrix4f& in);
   };
 }

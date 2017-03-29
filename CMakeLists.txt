@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   camera_calibration_parsers
   sensor_msgs  
+  tf_conversions
 )
 
 

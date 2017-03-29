@@ -3,12 +3,12 @@
 namespace point_cloud{
 
   ObjectDetection::ObjectDetection(const ros::NodeHandle nh):
-      nodeHandle(nh)
+      nodeHandle(nh), robot2camera_init_(false)
   {
     configure();
   }
 
-  ObjectDetection::~ObjectDetection(){
+  ObjectDetection::~ObjectDetection() {
   }
 
   void ObjectDetection::configure(){
@@ -23,6 +23,7 @@ namespace point_cloud{
     nodeHandle.param<std::string>("target_0", target0_filename, "vertices14_0.pcd");
     nodeHandle.param<std::string>("target_1", target1_filename, "vertices14_90.pcd");
     nodeHandle.param("use_only_first_target", use_only_first_target_, false);
+    nodeHandle.param<std::string>("robot_frame_id", robot_frame_id_, "girona500");
 
 
     // DEBUG
@@ -55,24 +56,7 @@ namespace point_cloud{
     b_world_pub_ = false;
 
     //Initialize, if desired by user, rotation matrix for previous scene rotation.
-   
-    if (rot_x != 0 || rot_y != 0 || rot_z != 0){
-      orientation_req_PC_ = true;
-      float rad_rot_x = rot_x * M_PI / 180;
-      float rad_rot_y = rot_y * M_PI / 180;
-      float rad_rot_z = rot_z * M_PI / 180;
-
-      rot_matrix_ = Eigen::Affine3f::Identity();
-      rot_matrix_.rotate (Eigen::AngleAxisf (-rad_rot_x, Eigen::Vector3f::UnitX()));
-      rot_matrix_.rotate (Eigen::AngleAxisf (-rad_rot_y, Eigen::Vector3f::UnitY()));
-      rot_matrix_.rotate (Eigen::AngleAxisf (-rad_rot_z, Eigen::Vector3f::UnitZ()));
-
-      anti_rot_matrix_ = Eigen::Affine3f::Identity();
-      anti_rot_matrix_.rotate (Eigen::AngleAxisf (rad_rot_x, Eigen::Vector3f::UnitX()));
-      anti_rot_matrix_.rotate (Eigen::AngleAxisf (rad_rot_y, Eigen::Vector3f::UnitY()));
-      anti_rot_matrix_.rotate (Eigen::AngleAxisf (rad_rot_z, Eigen::Vector3f::UnitZ()));
-    }
-    else (orientation_req_PC_ = false);
+    orientation_req_PC_ = true;
    
     // Load targets
     if (pcl::io::loadPCDFile (target0_filename, *best_target_reg_0_) < 0){
@@ -305,25 +289,21 @@ namespace point_cloud{
 
   }
 
-  void ObjectDetection::publishPose(const std::string& camera_frame_id,
-                                    const tf::Transform cam_to_target) {
+  void ObjectDetection::publishPose(const tf::Transform robot_to_target) {
     // Publish geometry message from world frame id
     if (target_pose_pub_.getNumSubscribers() > 0) {
       try {
         ros::Time now = ros::Time::now();
-        tf::StampedTransform world2camera;
+        tf::StampedTransform world2robot;
         tf_listener_.waitForTransform("world",
-                                      camera_frame_id,
+                                      robot_frame_id_,
                                       now, ros::Duration(1.0));
         tf_listener_.lookupTransform("world",
-            camera_frame_id, now, world2camera);
-
-        // Fix camera rotation
-        tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
+            robot_frame_id_, now, world2robot);
 
         // Compose the message
         geometry_msgs::Pose pose_msg;
-        tf::Transform world2target = world2camera * cam_to_target * cam_rot;
+        tf::Transform world2target = world2robot * robot_to_target;
         pose_msg.position.x = world2target.getOrigin().x();
         pose_msg.position.y = world2target.getOrigin().y();
         pose_msg.position.z = world2target.getOrigin().z();
@@ -331,8 +311,6 @@ namespace point_cloud{
         pose_msg.orientation.y = world2target.getRotation().y();
         pose_msg.orientation.z = world2target.getRotation().z();
         pose_msg.orientation.w = world2target.getRotation().w();
-
-
         target_pose_pub_.publish(pose_msg);
       } catch (tf::TransformException ex) {
         ROS_WARN_STREAM("Cannot find the tf between " <<
@@ -359,11 +337,12 @@ namespace point_cloud{
   }
 
   void ObjectDetection::publishData(pcl::PointCloud<PointType>::ConstPtr object_detected, 
-                                                    const sensor_msgs::PointCloud2::ConstPtr& in_cloud){
+                                    const sensor_msgs::PointCloud2::ConstPtr& in_cloud){
 
     sensor_msgs::PointCloud2 out_cloud;
     toROSMsg(*object_detected, out_cloud);
-    out_cloud.header = in_cloud->header;
+    out_cloud.header.stamp = in_cloud->header.stamp;
+    out_cloud.header.frame_id = robot_frame_id_;
     points2_pub_.publish(out_cloud);
 
     Eigen::Matrix3f initial_guess_rot;
@@ -379,16 +358,14 @@ namespace point_cloud{
     Eigen::Quaternionf target_quat (initial_guess_rot);
 
     // PUBLISH POSE TF
-    tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
     static tf::TransformBroadcaster br_target;
-    tf::Transform tf_sensor2object;
-    tf_sensor2object.setOrigin( tf::Vector3(initial_guess_(0,3), initial_guess_(1,3), initial_guess_(2,3)) );
-    tf_sensor2object.setRotation( tf::Quaternion (target_quat.x(), target_quat.y(), target_quat.z(), target_quat.w()));
-    tf_sensor2object = tf_sensor2object * cam_rot;
-    br_target.sendTransform(tf::StampedTransform(tf_sensor2object, ros::Time::now(), in_cloud->header.frame_id, "amphoraJP"));
+    tf::Transform tf_robot2object;
+    tf_robot2object.setOrigin( tf::Vector3(initial_guess_(0,3), initial_guess_(1,3), initial_guess_(2,3)) );
+    tf_robot2object.setRotation( tf::Quaternion (target_quat.x(), target_quat.y(), target_quat.z(), target_quat.w()));
+    br_target.sendTransform(tf::StampedTransform(tf_robot2object, ros::Time::now(), robot_frame_id_, "amphoraJP"));
 
     // PUBLSIH POSE STAMPED
-    publishPose(in_cloud->header.frame_id, tf_sensor2object);
+    publishPose(tf_robot2object);
 
   }
 
@@ -397,9 +374,36 @@ namespace point_cloud{
     sensor2_world_ = input_world_coord;
   }
 
+  bool ObjectDetection::getRobot2Camera(const std::string& camera_frame_id) {
+    try {
+      ros::Time now = ros::Time::now();
+      tf_listener_.waitForTransform(robot_frame_id_,
+                                    camera_frame_id,
+                                    now, ros::Duration(1.0));
+      tf_listener_.lookupTransform(robot_frame_id_,
+          camera_frame_id, now, robot2camera_);
+      robot2camera_init_ = true;
+      return true;
+    } catch (tf::TransformException ex) {
+      ROS_WARN_STREAM("[IcpRegistration]: Cannot find the tf between " <<
+        "robot frame id and camera. " << ex.what());
+      return false;
+    }
+  }
+
   void ObjectDetection::inputCloudClb (const sensor_msgs::PointCloud2::ConstPtr& in_cloud){
     pcl::PointCloud<PointType>::Ptr input_scene (new pcl::PointCloud<PointType> ());
     fromROSMsg(*in_cloud, *input_scene);
+
+    if (!robot2camera_init_) {
+      bool ok = getRobot2Camera(in_cloud->header.frame_id);
+      if (!ok) return;
+    }
+
+
+    Eigen::Affine3d trans_eigen;
+    transformTFToEigen(robot2camera_, trans_eigen);
+    pcl::transformPointCloud(*input_scene, *input_scene, trans_eigen);
 
     if (input_scene->points.size() == 0){
       std::cout << "WARNING ObjectDetection:: No points in point cloud \n" <<std:: endl;
@@ -445,11 +449,6 @@ namespace point_cloud{
 
       pcl::PointCloud<PointType>::Ptr original_scene (new pcl::PointCloud<PointType> ());
       if (debug_set_inclination_) (pcl::copyPointCloud(*input_scene, *original_scene));
-
-      pcl::transformPointCloud (*input_scene, *input_scene, rot_matrix_);
-      Eigen::Matrix4f rotation_matrix4;
-      rotation_matrix4 = rot_matrix_.matrix();
-      initial_guess_ = initial_guess_* rot_matrix_.matrix() ;
 
       if (debug_set_inclination_){
         pcl::visualization::PCLVisualizer viewer16 ("Debug set inclination");
@@ -527,13 +526,7 @@ namespace point_cloud{
           Eigen::Matrix4f output_trans_4f;
           output_trans_4f = output_trans.matrix();
 
-          if (orientation_req_PC_){                       
-            Eigen::Matrix4f anti_rot_matrix_4f;
-            anti_rot_matrix_4f = anti_rot_matrix_.matrix();            
-            initial_guess_ = anti_rot_matrix_4f * output_trans_4f;
-          }
-
-          else initial_guess_ = output_trans_4f;
+          initial_guess_ = output_trans_4f;
 
           it_bef_height_filter_ = 0;
           return;
