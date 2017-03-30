@@ -55,7 +55,7 @@ namespace point_cloud {
       bool   debug_best_target_;
       bool   debug_set_inclination_;
       bool   debug_registration_;
-   
+      std::string target_name_;
       bool   filter_range_;
       int    min_scene_point_size_;
       float  min_range_ , max_range_;
@@ -103,9 +103,10 @@ namespace point_cloud {
       void publishData(pcl::PointCloud<PointType>::ConstPtr reg_result, 
                        const sensor_msgs::PointCloud2::ConstPtr& in_cloud);
 
-      void publishPose(const std::string& camera_frame_id,
+      void publishPose(const std_msgs::Header header,
                        const tf::Transform cam_to_target);
       tf::Transform matrix4fToTf(const Eigen::Matrix4f& in);
+
   };
 }
 #endif /* local_location_H_ */

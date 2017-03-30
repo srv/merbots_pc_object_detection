@@ -22,6 +22,7 @@ namespace point_cloud{
     nodeHandle.param<std::string>("frame_id", frame_id_, "camera");
     nodeHandle.param<std::string>("target_0", target0_filename, "vertices14_0.pcd");
     nodeHandle.param<std::string>("target_1", target1_filename, "vertices14_90.pcd");
+    nodeHandle.param<std::string>("target_name", target_name_, "caduf");
     nodeHandle.param("use_only_first_target", use_only_first_target_, false);
 
 
@@ -161,7 +162,7 @@ namespace point_cloud{
       prev = reg.getLastIncrementalTransformation ();
       score = reg.getFitnessScore();
 
-      std::cout << "ITERATION=" << i << "; SCORE=" << score << "; Incremental score:" << prev_score - score << "\n" << std::endl;
+      //std::cout << "ITERATION=" << i << "; SCORE=" << score << "; Incremental score:" << prev_score - score << "\n" << std::endl;
       if (sqrt ((prev_score - score)*(prev_score - score)) < minimum_score_dif) {
         Eigen::Matrix4f output (reg.getFinalTransformation());
         reg_score = score;
@@ -305,7 +306,7 @@ namespace point_cloud{
 
   }
 
-  void ObjectDetection::publishPose(const std::string& camera_frame_id,
+  void ObjectDetection::publishPose(const std_msgs::Header header,
                                     const tf::Transform cam_to_target) {
     // Publish geometry message from world frame id
     if (target_pose_pub_.getNumSubscribers() > 0) {
@@ -313,17 +314,26 @@ namespace point_cloud{
         ros::Time now = ros::Time::now();
         tf::StampedTransform world2camera;
         tf_listener_.waitForTransform("world",
-                                      camera_frame_id,
+                                      header.frame_id,
                                       now, ros::Duration(1.0));
         tf_listener_.lookupTransform("world",
-            camera_frame_id, now, world2camera);
-
-        // Fix camera rotation
-        tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
+            header.frame_id, now, world2camera);
 
         // Compose the message
+        static tf::TransformBroadcaster world_target;
         geometry_msgs::Pose pose_msg;
-        tf::Transform world2target = world2camera * cam_to_target * cam_rot;
+        tf::Transform world2target = world2camera * cam_to_target;
+
+        // Fix orientation
+        tf::Matrix3x3 rot = world2target.getBasis();
+        double r, p, y;
+        rot.getRPY(r, p, y);
+        tf::Quaternion q;
+        q.setRPY(0.0, 0.0, y);
+        world2target.setRotation(q);
+
+        world_target.sendTransform(tf::StampedTransform(world2target, header.stamp, "world", target_name_));
+
         pose_msg.position.x = world2target.getOrigin().x();
         pose_msg.position.y = world2target.getOrigin().y();
         pose_msg.position.z = world2target.getOrigin().z();
@@ -379,16 +389,20 @@ namespace point_cloud{
     Eigen::Quaternionf target_quat (initial_guess_rot);
 
     // PUBLISH POSE TF
+    tf::Quaternion q;
+
+    q.setRPY (-22.5 * M_PI / 180,0,0);
+    tf::Transform perp_rot (q);
     tf::Transform cam_rot =  matrix4fToTf(rot_matrix_.matrix());
     static tf::TransformBroadcaster br_target;
     tf::Transform tf_sensor2object;
     tf_sensor2object.setOrigin( tf::Vector3(initial_guess_(0,3), initial_guess_(1,3), initial_guess_(2,3)) );
     tf_sensor2object.setRotation( tf::Quaternion (target_quat.x(), target_quat.y(), target_quat.z(), target_quat.w()));
-    tf_sensor2object = tf_sensor2object * cam_rot;
-    br_target.sendTransform(tf::StampedTransform(tf_sensor2object, ros::Time::now(), in_cloud->header.frame_id, "amphoraJP"));
+    tf_sensor2object = tf_sensor2object * perp_rot*cam_rot;
+    //br_target.sendTransform(tf::StampedTransform(tf_sensor2object, ros::Time::now(), in_cloud->header.frame_id, "amphoraJP"));
 
     // PUBLSIH POSE STAMPED
-    publishPose(in_cloud->header.frame_id, tf_sensor2object);
+    publishPose(in_cloud->header, tf_sensor2object);
 
   }
 
